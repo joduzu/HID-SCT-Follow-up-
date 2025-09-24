@@ -226,6 +226,10 @@
             resize: vertical;
         }
         
+        .file-input {
+            display: none;
+        }
+        
         @media (max-width: 992px) {
             .progress-sidebar {
                 display: none;
@@ -1112,9 +1116,14 @@
                     
                     <!-- Action Buttons -->
                     <div class="d-flex justify-content-between mt-4">
-                        <button class="btn btn-outline-secondary" id="btn-export-json">
-                            <i class="fas fa-download me-2"></i>Export JSON
-                        </button>
+                        <div>
+                            <button class="btn btn-outline-secondary" id="btn-import-excel">
+                                <i class="fas fa-upload me-2"></i>Import Excel
+                            </button>
+                            <button class="btn btn-outline-secondary" id="btn-export-json">
+                                <i class="fas fa-download me-2"></i>Export JSON
+                            </button>
+                        </div>
                         <div>
                             <button class="btn btn-outline-primary me-2" id="btn-save">
                                 <i class="fas fa-save me-2"></i>Save Draft
@@ -1156,6 +1165,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="fileInput" class="file-input" accept=".xlsx, .xls">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -1482,13 +1494,67 @@
         function exportToExcel() {
             saveProgress();
             
-            // Prepare data for Excel export
-            const data = [];
+            // Create workbook
+            const wb = XLSX.utils.book_new();
             
-            // Add headers
+            // Sheet 1: Team Information
+            const teamInfoData = [
+                ['Team Information', ''],
+                ['Team Name', assessmentData.teamInfo.teamName || ''],
+                ['Region', assessmentData.teamInfo.region || ''],
+                ['Country', assessmentData.teamInfo.country || ''],
+                ['Mentor Name', assessmentData.teamInfo.mentorName || ''],
+                [''],
+                ['Headquarters Contact', ''],
+                ['Name', assessmentData.teamInfo.hqName || ''],
+                ['Email', assessmentData.teamInfo.hqEmail || ''],
+                ['Phone', assessmentData.teamInfo.hqPhone || ''],
+                ['Position', assessmentData.teamInfo.hqPosition || ''],
+                [''],
+                ['Operations Contact', ''],
+                ['Name', assessmentData.teamInfo.opsName || ''],
+                ['Email', assessmentData.teamInfo.opsEmail || ''],
+                ['Phone', assessmentData.teamInfo.opsPhone || ''],
+                ['Position', assessmentData.teamInfo.opsPosition || '']
+            ];
+            const teamInfoWs = XLSX.utils.aoa_to_sheet(teamInfoData);
+            XLSX.utils.book_append_sheet(wb, teamInfoWs, 'Team Info');
+
+            // Sheet 2: Progress Overview
+            const progressOverviewData = [
+                ['Section', 'Weight', 'Status', '% Completed']
+            ];
+            
+            const sectionProgress = calculateSectionProgress();
+            const sections = [
+                { name: 'GUIDING PRINCIPLES', weight: 2, section: 'guiding-principles' },
+                { name: 'CORE STANDARDS', weight: 18, section: 'core-standards' },
+                { name: 'CLINICAL STANDARDS', weight: 20, section: 'clinical-standards' },
+                { name: 'LOGISTIC STANDARDS', weight: 10, section: 'logistic-standards' },
+                { name: 'WASH STANDARDS', weight: 10, section: 'wash-standards' }
+            ];
+            
+            sections.forEach(s => {
+                const progress = sectionProgress[s.section];
+                let completed = 0;
+                
+                if (progress.maxScore > 0) {
+                    completed = Math.round((progress.score / progress.maxScore) * 100);
+                }
+                
+                const status = completed === 0 ? 'Not Started' : 
+                              completed < 100 ? 'In Progress' : 'Completed';
+                
+                progressOverviewData.push([s.name, s.weight + '%', status, completed + '%']);
+            });
+            
+            const progressOverviewWs = XLSX.utils.aoa_to_sheet(progressOverviewData);
+            XLSX.utils.book_append_sheet(wb, progressOverviewWs, 'Progress Overview');
+
+            // Sheet 3: Assessment Data
+            const data = [];
             data.push(['Standard ID', 'Pillar', 'Standard Statement', 'Score', 'Evidence', 'Gaps', 'Actions', 'Comments']);
             
-            // Add assessment items
             document.querySelectorAll('.score-select').forEach(select => {
                 const row = select.closest('tr');
                 const standardCell = row.cells[0];
@@ -1517,14 +1583,10 @@
                 ]);
             });
             
-            // Create workbook and worksheet
-            const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(data);
-            
-            // Add worksheet to workbook
             XLSX.utils.book_append_sheet(wb, ws, 'HID SCT Assessment');
-            
-            // Add summary sheet
+
+            // Sheet 4: Summary
             const summaryData = [
                 ['Summary Section', 'Content'],
                 ['Strengths Identified', assessmentData.summary.strengths || ''],
@@ -1549,6 +1611,36 @@
             showNotification('Data exported to Excel successfully!');
         }
 
+        // Function to calculate section progress (similar to updateProgress but without UI updates)
+        function calculateSectionProgress() {
+            const sectionProgress = {
+                'guiding-principles': { total: 0, completed: 0, score: 0, maxScore: 0 },
+                'core-standards': { total: 0, completed: 0, score: 0, maxScore: 0 },
+                'clinical-standards': { total: 0, completed: 0, score: 0, maxScore: 0 },
+                'logistic-standards': { total: 0, completed: 0, score: 0, maxScore: 0 },
+                'wash-standards': { total: 0, completed: 0, score: 0, maxScore: 0 }
+            };
+
+            document.querySelectorAll('.score-select').forEach(select => {
+                const section = select.dataset.section;
+                if (sectionProgress[section]) {
+                    sectionProgress[section].total++;
+                    
+                    if (select.value && select.value !== '') {
+                        sectionProgress[section].completed++;
+                        
+                        if (select.value !== 'NA') {
+                            const score = parseInt(select.value);
+                            sectionProgress[section].score += score;
+                            sectionProgress[section].maxScore += 3;
+                        }
+                    }
+                }
+            });
+
+            return sectionProgress;
+        }
+
         // Export to JSON
         function exportToJSON() {
             saveProgress();
@@ -1564,6 +1656,117 @@
             
             URL.revokeObjectURL(url);
             showNotification('Data exported to JSON successfully!');
+        }
+
+        // Import from Excel
+        function importFromExcel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Reset assessment data
+                    assessmentData = {
+                        teamInfo: {},
+                        scores: {},
+                        evidence: {},
+                        gaps: {},
+                        actions: {},
+                        comments: {},
+                        summary: {}
+                    };
+                    
+                    // Import Team Info
+                    if (workbook.Sheets['Team Info']) {
+                        const teamInfoSheet = workbook.Sheets['Team Info'];
+                        const teamInfoData = XLSX.utils.sheet_to_json(teamInfoSheet, { header: 1 });
+                        
+                        // Extract team info from the structured data
+                        assessmentData.teamInfo = {
+                            teamName: teamInfoData[1] ? teamInfoData[1][1] || '' : '',
+                            region: teamInfoData[2] ? teamInfoData[2][1] || '' : '',
+                            country: teamInfoData[3] ? teamInfoData[3][1] || '' : '',
+                            mentorName: teamInfoData[4] ? teamInfoData[4][1] || '' : '',
+                            hqName: teamInfoData[7] ? teamInfoData[7][1] || '' : '',
+                            hqEmail: teamInfoData[8] ? teamInfoData[8][1] || '' : '',
+                            hqPhone: teamInfoData[9] ? teamInfoData[9][1] || '' : '',
+                            hqPosition: teamInfoData[10] ? teamInfoData[10][1] || '' : '',
+                            opsName: teamInfoData[13] ? teamInfoData[13][1] || '' : '',
+                            opsEmail: teamInfoData[14] ? teamInfoData[14][1] || '' : '',
+                            opsPhone: teamInfoData[15] ? teamInfoData[15][1] || '' : '',
+                            opsPosition: teamInfoData[16] ? teamInfoData[16][1] || '' : ''
+                        };
+                    }
+                    
+                    // Import Assessment Data
+                    if (workbook.Sheets['HID SCT Assessment']) {
+                        const assessmentSheet = workbook.Sheets['HID SCT Assessment'];
+                        const assessmentDataArray = XLSX.utils.sheet_to_json(assessmentSheet, { header: 1 });
+                        
+                        // Skip header row
+                        for (let i = 1; i < assessmentDataArray.length; i++) {
+                            const row = assessmentDataArray[i];
+                            if (row.length >= 8) {
+                                const standardId = row[0];
+                                const score = row[3];
+                                const evidence = row[4];
+                                const gaps = row[5];
+                                const actions = row[6];
+                                const comments = row[7];
+                                
+                                assessmentData.scores[standardId] = score;
+                                assessmentData.evidence[standardId] = evidence;
+                                assessmentData.gaps[standardId] = gaps;
+                                assessmentData.actions[standardId] = actions;
+                                
+                                // Extract section from standardId for comments
+                                const section = standardId.split('-').slice(0, -1).join('-');
+                                if (section && comments) {
+                                    assessmentData.comments[`${section}Comments`] = comments;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Import Summary
+                    if (workbook.Sheets['Summary']) {
+                        const summarySheet = workbook.Sheets['Summary'];
+                        const summaryDataArray = XLSX.utils.sheet_to_json(summarySheet, { header: 1 });
+                        
+                        assessmentData.summary = {
+                            strengths: summaryDataArray[1] ? summaryDataArray[1][1] || '' : '',
+                            criticalGaps: summaryDataArray[2] ? summaryDataArray[2][1] || '' : '',
+                            immediateActions: summaryDataArray[3] ? summaryDataArray[3][1] || '' : '',
+                            shortTermActions: summaryDataArray[4] ? summaryDataArray[4][1] || '' : '',
+                            mediumTermActions: summaryDataArray[5] ? summaryDataArray[5][1] || '' : '',
+                            technicalAssistance: summaryDataArray[6] ? summaryDataArray[6][1] || '' : '',
+                            trainingRequirements: summaryDataArray[7] ? summaryDataArray[7][1] || '' : '',
+                            resourceRequirements: summaryDataArray[8] ? summaryDataArray[8][1] || '' : '',
+                            nextSteps: summaryDataArray[9] ? summaryDataArray[9][1] || '' : '',
+                            completionDate: summaryDataArray[10] ? summaryDataArray[10][1] || '' : '',
+                            reviewedBy: summaryDataArray[11] ? summaryDataArray[11][1] || '' : '',
+                            mentorAssignment: summaryDataArray[12] ? summaryDataArray[12][1] || '' : ''
+                        };
+                    }
+                    
+                    // Save to localStorage and update UI
+                    localStorage.setItem('hidSCTAssessment', JSON.stringify(assessmentData));
+                    loadSavedData();
+                    updateProgress();
+                    showNotification('Data imported successfully!');
+                    
+                    // Reset file input
+                    document.getElementById('fileInput').value = '';
+                } catch (error) {
+                    console.error('Error importing Excel file:', error);
+                    showNotification('Error importing Excel file. Please check the file format.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
         }
 
         // Initialize event listeners
@@ -1598,6 +1801,12 @@
                 saveProgress();
                 showNotification('Assessment submitted successfully!');
             });
+            
+            // Import functionality
+            document.getElementById('btn-import-excel').addEventListener('click', function() {
+                document.getElementById('fileInput').click();
+            });
+            document.getElementById('fileInput').addEventListener('change', importFromExcel);
             
             // Initialize tab functionality
             const triggerTabList = document.querySelectorAll('.nav-link');
