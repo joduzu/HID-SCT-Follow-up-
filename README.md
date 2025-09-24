@@ -52,7 +52,7 @@ Features
 Quick Start
 Using the Application
 
-    Open the deepseek_html_20250924_40a916.html file in any modern web browser
+    Open (https://joduzu.github.io/HID-SCT-Follow-up-/) file in any modern web browser
 
     Navigate through sections using the left sidebar
 
